@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Colourful To-Do & Calendar</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f8ff;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { color: #333; text-align: center; }
+    #taskForm {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      max-width: 400px;
+      margin: 0 auto 20px;
+    }
+    #taskForm input, #taskForm button {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    #taskForm button {
+      background: #4caf50;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    #taskList {
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .taskItem {
+      background: #fffae6;
+      margin: 10px 0;
+      padding: 12px;
+      border-left: 4px solid #ffb300;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .taskItem button {
+      background: #e53935;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .signedIn {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    #authorize_button, #signout_button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    #authorize_button { background: #1a73e8; color: white; }
+    #signout_button { background: #e53935; color: white; }
+  </style>
+</head>
+<body>
+
+<h1>My Colourful To-Do List</h1>
+
+<div class="signedIn">
+  <button id="authorize_button">Authorize Google Calendar</button>
+  <button id="signout_button" style="display:none;">Sign Out</button>
+</div>
+
+<div id="taskForm">
+  <input type="text" id="taskInput" placeholder="Enter task description" required />
+  <input type="date" id="dateInput" required />
+  <button id="addTaskButton">Add Task & Calendar Event</button>
+</div>
+
+<div id="taskList"></div>
+
+<!-- Load the Google APIs client library -->
+<script src="https://apis.google.com/js/api.js"></script>
+<script>
+  // TODO: Replace these with your values
+  const CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+  const API_KEY = 'YOUR_API_KEY';
+  const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest"];
+  const SCOPES = "https://www.googleapis.com/auth/calendar.events";
+
+  let gapiInited = false;
+  let gisInited = false;
+
+  const authorizeButton = document.getElementById("authorize_button");
+  const signoutButton = document.getElementById("signout_button");
+  const addTaskButton = document.getElementById("addTaskButton");
+  const taskListDiv = document.getElementById("taskList");
+
+  let tasks = [];
+
+  function handleClientLoad() {
+    gapi.load('client:auth2', initClient);
+  }
+
+  function initClient() {
+    gapi.client.init({
+      apiKey: API_KEY,
+      clientId: CLIENT_ID,
+      discoveryDocs: DISCOVERY_DOCS,
+      scope: SCOPES
+    }).then(() => {
+      // Listen for sign-in state changes.
+      gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+      // Handle the initial sign-in state.
+      updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+      authorizeButton.onclick = handleAuthClick;
+      signoutButton.onclick = handleSignoutClick;
+    }, (error) => {
+      console.error("Error in initClient", error);
+    });
+  }
+
+  function updateSigninStatus(isSignedIn) {
+    if (isSignedIn) {
+      authorizeButton.style.display = 'none';
+      signoutButton.style.display = 'inline-block';
+    } else {
+      authorizeButton.style.display = 'inline-block';
+      signoutButton.style.display = 'none';
+    }
+  }
+
+  function handleAuthClick(event) {
+    gapi.auth2.getAuthInstance().signIn();
+  }
+
+  function handleSignoutClick(event) {
+    gapi.auth2.getAuthInstance().signOut();
+  }
+
+  function addTask(taskDesc, dateStr) {
+    const id = Date.now().toString();
+    tasks.push({ id, taskDesc, dateStr });
+    renderTasks();
+    addEventToCalendar(taskDesc, dateStr);
+  }
+
+  function renderTasks() {
+    taskListDiv.innerHTML = '';
+    tasks.forEach(t => {
+      const div = document.createElement('div');
+      div.className = 'taskItem';
+      div.innerHTML = `<span>${t.taskDesc} — ${t.dateStr}</span> <button onclick="removeTask('${t.id}')">Remove</button>`;
+      taskListDiv.appendChild(div);
+    });
+  }
+
+  function removeTask(id) {
+    tasks = tasks.filter(t => t.id !== id);
+    renderTasks();
+  }
+
+  function addEventToCalendar(summary, dateStr) {
+    if (!gapi.auth2.getAuthInstance().isSignedIn.get()) {
+      alert("Please sign in to Google to add to Calendar");
+      return;
+    }
+
+    // Set time in IST (Asia/Kolkata). Here we set start at 09:00 and end at 09:30 for example.
+    const startDateTime = new Date(dateStr + 'T09:00:00');
+    const endDateTime   = new Date(dateStr + 'T09:30:00');
+
+    // Convert to ISO string with timezone.
+    const event = {
+      'summary': summary,
+      'start': {
+        'dateTime': startDateTime.toISOString(),
+        'timeZone': 'Asia/Kolkata'
+      },
+      'end': {
+        'dateTime': endDateTime.toISOString(),
+        'timeZone': 'Asia/Kolkata'
+      }
+    };
+
+    const request = gapi.client.calendar.events.insert({
+      'calendarId': 'primary',
+      'resource': event
+    });
+
+    request.execute(function(event) {
+      console.log("Event created: " + event.htmlLink);
+      alert("Calendar event created!");
+    });
+  }
+
+  addTaskButton.addEventListener('click', () => {
+    const taskDesc = document.getElementById('taskInput').value.trim();
+    const dateStr  = document.getElementById('dateInput').value;
+    if (!taskDesc || !dateStr) {
+      alert("Please enter both task and date");
+      return;
+    }
+    addTask(taskDesc, dateStr);
+    document.getElementById('taskInput').value = '';
+    document.getElementById('dateInput').value = '';
+  });
+
+  // Load the client immediately
+  handleClientLoad();
+</script>
+
+</body>
+</html>
